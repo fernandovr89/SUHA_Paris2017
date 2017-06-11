@@ -1,0 +1,103 @@
+from rsf.proj import *
+import numpy as np
+import math
+
+DATA_DIR = '../M301_Marmousi/'
+
+total_time = 6*60*60
+#total_time = 20
+dt = 0.02
+seg_dt = int(1/dt)
+total_n_time = total_time*seg_dt
+nt_trace = 110
+lngst_time = 6*nt_trace
+ns = 100
+max_ns = int(total_n_time/nt_trace)+1
+rec_i = 150
+nrecH = 100
+rtag = '%03d'%rec_i
+nw_costaper = 10
+
+f_nonoise = True
+if f_nonoise:
+  sim_sources=6
+  recH_iss = []
+  for iss in range(sim_sources):
+    isstag = '%02d'%iss
+    zero_array = np.random.randint(1,lngst_time,max_ns)
+    source_array = np.random.randint(0,ns,max_ns)
+    
+    it_tag_zeros = math.ceil(np.log10(total_n_time+1)) 
+    recH_it = []
+   
+    accum_t = 0
+    it = 0
+    while total_n_time - accum_t > (zero_array[it]+nt_trace):
+      accum_t += zero_array[it]
+      ittag = '%06d'%it
+      foname = 'datH_zero'+ittag+'_iss'+isstag+'.rsf'
+      Flow(foname,None,
+          '''
+          $RSFROOT/bin/sfmath n1=%d d1=%g  output=0
+          | $RSFROOT/bin/sfspray axis=2 n=%d
+          '''%(zero_array[it],dt,nrecH))
+      stag = '%03d'%source_array[it]
+      finame = DATA_DIR+'datH_fsy'+stag+'.rsf'
+      foname = 'datH_s'+stag+'_ti'+ittag+'_iss'+isstag+'.rsf'
+      Flow(foname,finame,
+          '''
+          $RSFROOT/bin/sfwindow n2=%d
+          | $RSFROOT/bin/sftransp         
+          | $RSFROOT/bin/sfcostaper nw2=%d
+          '''%(nt_trace,nw_costaper))
+      finame ='datH_zero'+ittag+'_iss'+isstag+'.rsf'\
+               +' datH_s'+stag+'_ti'+ittag+'_iss'+isstag+'.rsf'
+      foname ='recH_it'+ittag+'_iss'+isstag+'.rsf'
+      Flow(foname,finame,
+          '''
+          $RSFROOT/bin/sfcat ${SOURCES[1:%d]} axis=1
+          '''%(len(finame)))
+#      finame ='datH_zero'+ittag+'_iss'+isstag+'.rsf'\
+#               +' datH_s'+stag+'_ti'+ittag+'_iss'+isstag+'.rsf'
+      recH_it.append(foname)
+#      Flow('',finame,
+#          '''
+#          $RSFROOT/bin/sfrm ${SOURCES[1:%d]} 
+#          '''%(len(finame)),stdout=-1)
+      accum_t += nt_trace 
+      it+=1
+    ###END WHILE total_n_time - accum_t < lngst_time
+    ittag = '%06d'%it
+    foname = 'recH_it'+ittag+'_iss'+isstag+'.rsf' 
+    Flow(foname,None,
+        '''
+        $RSFROOT/bin/sfmath n1=%d d1=%g output=0
+        | $RSFROOT/bin/sfspray axis=2 n=%d
+        '''%(total_n_time-accum_t,dt,nrecH))
+    recH_it.append(foname)
+    
+    finame = recH_it
+    foname ='recH_iss'+isstag+'.rsf'  
+    Flow(foname,finame,
+        '''
+        $RSFROOT/bin/sfcat ${SOURCES[1:%d]} axis=1
+        |  $RSFROOT/bin/sfwindow n1=%d
+        '''%(len(finame),total_n_time))
+    recH_iss.append(foname)
+  ##END FOR iss in range(sim_sources):
+  
+  finame = recH_iss
+  foname ='recH.rsf'  
+  Flow(foname,finame,
+      '''
+      $RSFROOT/bin/sfcat ${SOURCES[1:%d]} axis=3
+      | $RSFROOT/bin/sfstack axis=3
+      '''%(len(finame)))
+##END IF f_nonoise:
+finame ='recH.rsf'  
+foname ='recH_noise.rsf'  
+Flow(foname,finame,
+    '''
+    $RSFROOT/bin/sfnoise var=0.5 seed=2018
+    ''')
+

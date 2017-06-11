@@ -1,0 +1,103 @@
+from rsf.proj import *
+
+ns = 100
+nr = 100
+o_r = 2.6
+dr = 0.04
+nw_costaper = 10
+n1_conv = 75
+f1_conv = 200
+
+DATA_DIR = '../M302_bldRecMar/'
+
+f_createRec = False
+if f_createRec:
+  rec_ir = []
+  for ir in range(nr):
+    irtag='%03d'%ir
+    finame = DATA_DIR+'recH_noise.rsf'
+    foname = 'recH_ir'+irtag+'.rsf' 
+    Flow(foname,finame,
+        '''
+        $RSFROOT/bin/sfput n1=200 n2=5400 n3=100
+        | $RSFROOT/bin/sfwindow n3=1 f3=%d
+        | $RSFROOT/bin/sfcostaper rect1=%d
+        | $RSFROOT/bin/sfreverse which=1 
+        '''%(ir,nw_costaper))
+    rec_jr = []
+    rec_jr_tostack = []
+    for jr in range(nr):
+        jrtag = '%03d'%jr
+        finame = DATA_DIR+'recH_noise.rsf'+' recH_ir'+irtag+'.rsf'
+        foname = 'conBR_ir'+irtag+'jr'+jrtag+'_tostack.rsf'
+        Flow(foname,finame,
+            '''
+            $RSFROOT/bin/sfput n1=200 n2=5400 n3=100
+            | $RSFROOT/bin/sfwindow n3=1 f3=%d
+            | $RSFROOT/bin/sfcostaper rect1=%d
+            | $RSFROOT/bin/sfconv adj=n trans=y each=y filt=${SOURCES[1]}
+            | $RSFROOT/bin/sfwindow n1=%d f1=%d
+            '''%(jr,nw_costaper,n1_conv,f1_conv))
+        rec_jr_tostack.append(foname)
+        finame = foname
+        foname = 'conBR_ir'+irtag+'jr'+jrtag+'.rsf'
+        Flow(foname,finame,
+            '''
+            $RSFROOT/bin/sfagc rect1=20
+            | $RSFROOT/bin/sfstack axis=2
+            ''')
+        rec_jr.append(foname)
+  
+    ##END FOR jr
+    finame = rec_jr_tostack
+    foname =  'conBR_ir'+irtag+'_tostack.rsf'
+    Flow(foname,finame,
+        '''
+        $RSFROOT/bin/sfcat ${SOURCES[1:%d]} axis=3
+        | $RSFROOT/bin/sfput o3=%g d3=%g o1=0.0
+        '''%(len(finame),o_r,dr))
+    finame = rec_jr
+    foname =  'conBR_ir'+irtag+'.rsf'
+    Flow(foname,finame,
+        '''
+        $RSFROOT/bin/sfcat ${SOURCES[1:%d]} axis=2
+        | $RSFROOT/bin/sfput o2=%g d2=%g o1=0.0
+        '''%(len(finame),o_r,dr))
+    rec_ir.append(foname)
+  ##END FOR ir
+  finame = rec_ir
+  foname = 'convBR.rsf'
+  Flow(foname,finame,
+      '''
+      $RSFROOT/bin/sfcat ${SOURCES[1:%d]} axis=3
+      | $RSFROOT/bin/sfput o3=%g d3=%g o1=0.0
+      '''%(len(finame),o_r,dr))
+##END IF f_createRec
+
+f_sumPart = True
+if f_sumPart:
+  rec_ir = []
+  nw = 2000
+  nwtag = '%d'%nw
+  for ir in range(nr):
+    irtag='%03d'%ir
+    finame = 'conBR_ir'+irtag+'_tostack.rsf'
+    foname = 'conBR_ir'+irtag+'_nw'+nwtag+'.rsf'
+    Flow(foname,finame,
+         '''
+         $RSFROOT/bin/sfwindow n2=%d
+         | $RSFROOT/bin/sfstack axis=2
+         '''%(nw))
+    rec_ir.append(foname)
+
+    ##END FOR jr
+  finame = rec_ir
+  foname =  'conBR_nw'+nwtag+'.rsf'
+  Flow(foname,finame,
+      '''
+      $RSFROOT/bin/sfcat ${SOURCES[1:%d]} axis=3
+      | $RSFROOT/bin/sfput o3=%g d3=%g o1=0.0
+      '''%(len(finame),o_r,dr))
+##END IF sumPart 
+End()
+

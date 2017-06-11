@@ -1,0 +1,266 @@
+from rsf.proj import *
+from rsf.recipes import fdmod
+import ast
+
+xmax = 14.0
+zmax = 6.0
+wbz = 0.084
+#layers = ((wbz,wbz,wbz,wbz),
+#          (0.95,0.95,0.95,0.95),
+#          (2.00,2.00,1.75,1.75),
+#          (5.90,5.90,5.90,5.90))
+#
+#velocities = (1.500,
+#              1.800,
+#              2.000,
+#              2.300,
+#              4.500)
+#def arr2str(array,sep=' '):
+#    return string.join(map(str,array),sep)
+#
+#vstr = arr2str(velocities,',')
+#
+#n1 = len(layers[0])
+#n2 = len(layers)
+#
+#Flow('layers.asc',None,
+#     '''
+#     echo %s
+#     n1=%d n2=%d o1=0 d1=%g
+#     data_format=ascii_float in=$TARGET     
+#     ''' % (string.join(map(arr2str,layers),' '),
+#            n1,n2,xmax/(n1-1)))
+#Flow('layers','layers.asc','dd form=native')
+
+d = 0.0075 # non-round for reproducibility
+nx = int(1.5+xmax/d)
+nz = int(1.5+zmax/d)
+#Flow('refs','layers',
+#     '$RSFROOT/bin/sfspline o1=0 d1=%g n1=%d' % (d,nx))
+#Flow('dips','refs','deriv scale=y')
+#
+#Flow('mod1','refs',
+#     '''
+#     $RSFROOT/bin/sfunif2 d1=%g n1=%d v00=%s 
+#     ''' % (d,nz,vstr))
+#
+# ------------------------------------------------------------
+# Sigsbee 2A parameters
+nx=2301
+nz=1151
+dx=0.004
+dz=dx
+par1 = dict( 
+    nx=2301, ox=0.0 ,dx=0.004, lx='x',ux='km',
+    nz=1151, oz=0.0, dz=0.004, lz='z',uz='km',
+    nt=12501,ot=0.0, dt=0.0002, lt='t',ut='s',
+    pclip=99.0,
+    ratio=1.0,
+    jsnap=2500,
+    kt=800,
+    nb=50,
+    drsmpt=100
+    )
+
+# ------------------------------------------------------------
+# set plotting parameters
+fdmod.param(par1)
+# ------------------------------------------------------------
+
+#Plot  ('mod1',fdmod.cgrey('mean=y',par1))
+#Result('mod1',fdmod.cgrey('mean=y',par1))
+
+ns=100
+ds=0.04
+rz0 = wbz
+## ------------------------------------------------------------
+# horizontal array @ z=1.5km
+##fdmod.horizontal('tH',rz0,par1)
+##par1['jrH']=10   # jump (grid points)
+##par1['orH']=2.6 # origin
+##par1['nrH']=100   # number
+##
+### window array
+##Flow('rH','tH',
+##  'window j2=%d min2=%g n2=%d'%
+##  (par1['jrH'],  # jump
+##   par1['orH'],  # origin
+##   par1['nrH'])) # number
+##    
+##    # plot array
+##Plot('rH',fdmod.rrplot('',par1))
+##    
+#### make the density
+###Flow('dens','mod1','$RSFROOT/bin/sfmath output=1')
+###Plot('dens',fdmod.cgrey('mean=y',par1))
+##
+#### ------------------------------------------------------------
+#### make stratigraphic velocity
+###Flow('vstr','mod1',
+###     'window | smooth rect1=5 rect2=15 repeat=3 ')
+#### make smooth velocity
+###Flow('vsmo','modl',
+###     'smooth rect1=25 rect2=25 repeat=3')
+#### ------------------------------------------------------------
+###Plot('vstr',fdmod.cgrey('mean=y',par1))
+###
+#### ------------------------------------------------------------
+### construct wavelet
+##fdmod.wavelet('wav_',9,par1) 
+##
+### transpose wavelet
+##Flow(  'wav','wav_','transp')      
+##
+### plot wavelet
+##Result('wav','window n2=4000 |'
+##       + fdmod.waveplot('',par1)) 
+##
+##
+####Model marmusi
+
+raw=['marmvel.hh']
+
+# fetch Marmousi
+Fetch('marmvel.hh',"marm")
+
+Flow('marmvel','marmvel.hh',
+     '''
+     dd form=native | scale rscale=.001 | 
+     put label1=Depth label2=Position unit1=km unit2=km d1=0.004 d2=0.004
+     ''')
+
+# smooth model
+Flow('marm1','marmvel','window n1=7')
+Flow('marm2','marmvel','window f1=7 n1=730 | smooth rect1=15 rect2=15 repeat=2')
+Flow('marm3','marmvel','window f1=7 n1=730 | smooth rect1=15 rect2=15 repeat=2 | window f1=729 | spray axis=1 n=400')
+
+finame = 'marm1 marm1 marm1 marm2 marm3'
+Flow('marm',finame,
+     '''
+     $RSFROOT/bin/sfcat axis=1 ${SOURCES[1:%d]}
+     '''%(len(finame)))
+
+Flow('vstr','marm','window')
+Flow('dens','vstr','$RSFROOT/bin/sfmath output=1')
+Plot('vstr',fdmod.cgrey('mean=y',par1))
+
+## ------------------------------------------------------------
+
+##for si in range(2,ns,4):
+###for si in [1]:
+##
+##  stag='%03d'%si
+###
+### ------------------------------------------------------------
+### source coordinates (exploding reflectors)
+##  fdmod.boxarray('ss'+stag,
+##                 1,   # vertical number
+##                 1.5,   # vertical origin 
+##                 0.01, # vertical sampling
+##                 2,  # horizontal number
+##                 2.6+ds*si,  # horizontal origin
+##                 0.01, # horizontal sampling
+##                 par1)
+##  Plot('ss'+stag,fdmod.ssplot('',par1))
+##  Result('ss'+stag,['vstr','ss'+stag,'rH'],'Overlay')
+##
+##
+### ------------------------------------------------------------
+#### run FD modeling
+##  fdmod.awefd1('tmpA_fsy'+stag,  # data file (all receivers)
+##               'wfld_fsy'+stag,  # wavefield snapshots
+##               'wav',   # source wavelet
+##               'vstr',  # velocity
+##               'dens',  # density
+##               'ss'+stag,    # source coordinates
+##               'rH',    # receiver coordinates
+##               'fsrf=y', 
+##               par1)
+##
+###  fdmod.awefd1('tmpA_fsn'+stag,  # data file (all receivers)
+###               'wfld_fsn'+stag,  # wavefield snapshots
+###               'wav',   # source wavelet
+###               'vstr',  # velocity
+###               'dens',  # density
+###               'ss'+stag,    # source coordinates
+###               'rH',    # receiver coordinates
+###               'fsrf=n',# optional flags
+###               par1)
+###
+###
+#### ------------------------------------------------------------
+###par1['nfrm']=int((par1['nt']-1)/par1['jsnap'])
+###for i in range(par1['nfrm']):
+###    tag = '-%02d'%i
+###    # plot wavefield frames
+###    fdmod.wframe('wfld'+tag,
+###                 'wfld',i,'pclip=99',par1)
+###    Plot(  'wovl'+tag,['wfld'+tag,'ss','rH'],
+###           'Overlay')
+###    Result('wfld'+tag,['wfld'+tag,'ss','rH'],
+###           'Overlay')
+###Result('wfld',
+###       ['wovl-%02d'%i for i in range(par1['nfrm'])],
+###       'Movie')
+##    
+#### ------------------------------------------------------------
+#### remove the wavelet delay and resample
+##  Flow('datA_fsy'+stag,'tmpA_fsy'+stag,
+##       '''
+##       window squeeze=n f2=%(kt)d j2=%(drsmpt)d  |
+##       pad end2=%(kt)d |
+##       put o2=%(ot)g
+##       ''' %par1)
+###  Flow('datA_fsn'+stag,'tmpA'+stag,
+###       '''
+###       window squeeze=n f2=%(kt)d j2=%(drsmpt)d  |
+###       pad end2=%(kt)d |
+###       put o2=%(ot)g
+###       ''' %par1)
+###
+###  Flow(None,'tmpA'+stag,'rm $SOURCE ',stdin=0)
+##
+###
+#### ------------------------------------------------------------
+#### window data from the horizontal array
+##  Flow('datH_fsy'+stag,'datA_fsy'+stag,
+##       '''
+##       window squeeze=n n1=%d |
+##       put o1=%g d1=%g
+##       '''%(par1['nrH'],
+##            par1['orH'],
+##          par1['jrH']*par1['dx'])) 
+#  Flow('datH_fsn'+stag,'datA'+stag,
+#       '''
+#       window squeeze=n n1=%d |
+#       put o1=%g d1=%g
+#       '''%(par1['nrH'],
+#            par1['orH'],
+#          par1['jrH']*par1['dx'])) 
+#
+#  Result('datH'+stag,'window j2=4 | transp|'
+#         + fdmod.dgrey('pclip=92'%par1,par1))
+  
+### ENDFOR { for si in range(ns):}
+
+#Result('wigH','datH','window j2=4 | transp|'
+#       + fdmod.dwigl('pclip=98'%par1,par1))
+#
+# run FD migration
+#fdmod.zom('imgH',  # image
+#  'datH',  # data
+#  'vstr',   # velocity
+#  'dens',   # density
+#  'rH',    # receiver coordinates
+#  'fsrf=n', # optional flags
+#  par1)
+    
+#    # plot image
+#Plot(  'imgH','bandpass flo=2 |'
+#  + fdmod.cgrey('pclip=99',par1))
+    
+#    # overlay sources and receivers
+#Result('imgH',['imgH','ss','rH'],'Overlay')
+    
+## ------------------------------------------------------------
+End()
